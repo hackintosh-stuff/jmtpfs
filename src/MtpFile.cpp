@@ -35,27 +35,25 @@ std::unique_ptr<MtpNode> MtpFile::getNode(const FilesystemPath& path)
 	throw FileNotFound(path.str());
 }
 
-MtpNodeMetadata MtpFile::getMetadata()
+MtpNodeMetadataPtr MtpFile::getMetadata()
 {
-	MtpNodeMetadata md;
-	md.self = m_device.GetFileInfo(m_id);
-	return md;
+	return std::make_shared<MtpNodeMetadata>(m_device.GetFileInfo(m_id));
 }
 
 void MtpFile::getattr(struct stat& info)
 {
-	MtpNodeMetadata md = m_cache.getItem(m_id, *this);
+	MtpNodeMetadataPtr md = m_cache.getItem(m_id, *this);
 
 	info.st_mode = S_IFREG | 0644;
 	info.st_nlink = 1;
-	info.st_mtime = md.self.modificationdate;
+	info.st_mtime = md->modificationdate();
 	MtpLocalFileCopy* localFile = m_cache.getOpenedFile(m_id);
 	if (localFile)
 	{
 		info.st_size = localFile->getSize();
 	}
 	else
-		info.st_size = md.self.filesize;
+		info.st_size = md->filesize();
 }
 
 
@@ -121,12 +119,12 @@ void MtpFile::Remove()
 
 }
 
-void MtpFile::Rename(MtpNode& newParent, const std::string& newName)
+void MtpFile::Rename(MtpNode& newParent, const boost::string_ref& newName)
 {
 	if (newName.length() > MAX_MTP_NAME_LENGTH)
 		throw MtpNameTooLong();
 	Fsync();
-	MtpNodeMetadata md = m_cache.getItem(m_id, *this);
+	MtpNodeMetadataPtr md = m_cache.getItem(m_id, *this);
 	uint32_t parentId = GetParentNodeId();
 	/* This true in place rename seems to confuse apps on the android device. The Gallery app
 	 * for example, won't notice image files that have been renamed. So to prevent this strangeness
@@ -140,13 +138,15 @@ void MtpFile::Rename(MtpNode& newParent, const std::string& newName)
 	*/
 	{
 		//we have to do a copy and delete
-		MtpLocalFileCopy* localFile = m_cache.openFile(m_device, md.self.id);
-		NewLIBMTPFile newFile(newName, newParent.FolderId(), newParent.StorageId(), localFile->getSize());
+		MtpLocalFileCopy* localFile = m_cache.openFile(m_device, md->id());
+
+		MtpFileInfo newFile(newName, newParent.FolderId(), newParent.StorageId(), localFile->getSize());
+
 		localFile->CopyTo(m_device, newFile);
-		m_cache.clearItem(md.self.id);
-		m_cache.clearItem(((LIBMTP_file_t*)newFile)->item_id);
-		m_device.DeleteObject(md.self.id);
-		m_id = ((LIBMTP_file_t*)newFile)->item_id;
+		m_cache.clearItem(md->id());
+		m_cache.clearItem(newFile.id());
+		m_device.DeleteObject(md->id());
+		m_id = newFile.id();
 
 	}
 	m_cache.clearItem(parentId);

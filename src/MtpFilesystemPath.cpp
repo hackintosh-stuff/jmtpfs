@@ -26,12 +26,15 @@
 
 FilesystemPath::FilesystemPath(const char* path) : m_path(path)
 {
-
 }
 
-std::string FilesystemPath::Head() const
+FilesystemPath::FilesystemPath(const boost::string_ref& path) : m_path(path)
 {
-	std::string result;
+}
+
+boost::string_ref FilesystemPath::Head() const
+{
+	boost::string_ref result;
 	size_t p = m_path.find("/");
 	if (p==0)
 		return "/";
@@ -44,7 +47,7 @@ std::string FilesystemPath::Head() const
 	return result;
 }
 
-std::string FilesystemPath::str() const
+const boost::string_ref& FilesystemPath::str() const
 {
 	return m_path;
 }
@@ -54,7 +57,7 @@ FilesystemPath	FilesystemPath::Body() const
 	size_t p = m_path.find("/");
 	if (p==std::string::npos)
 		return FilesystemPath("");
-	return FilesystemPath(m_path.substr(p+1).c_str());
+	return FilesystemPath(m_path.substr(p+1));
 }
 
 bool FilesystemPath::Empty() const
@@ -69,12 +72,12 @@ FilesystemPath FilesystemPath::AllButTail() const
 		return FilesystemPath("");
 	if (p==0)
 		return FilesystemPath("/");
-	return FilesystemPath(m_path.substr(0,p).c_str());
+	return FilesystemPath(m_path.substr(0,p));
 }
 
-std::string FilesystemPath::Tail() const
+boost::string_ref FilesystemPath::Tail() const
 {
-	std::string result;
+	boost::string_ref result;
 	size_t p = m_path.rfind("/");
 	if (p == std::string::npos)
 		result = m_path;

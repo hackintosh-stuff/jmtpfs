@@ -28,32 +28,39 @@ MtpMetadataCacheFiller::~MtpMetadataCacheFiller()
 
 }
 
-MtpMetadataCache::MtpMetadataCache()
+
+void MtpMetadataCache::putItem(MtpNodeMetadataPtr data)
 {
 
+	clearOld();
+
+	DEBUG("cache put %u '%s'", data->id(), data->name().data());
+	CacheEntry newData { data };
+	newData.data->from_cache = true;
+	newData.whenCreated = time(0);
+	m_cacheLookup[data->id()] = m_cache.insert(m_cache.end(), std::move(newData));
 }
-MtpMetadataCache::~MtpMetadataCache()
-{
-	for(local_file_cache_type::iterator i = m_localFileCache.begin(); i != m_localFileCache.end(); i++)
-	{
-		delete i->second;
-	}
-}
 
 
-
-MtpNodeMetadata MtpMetadataCache::getItem(uint32_t id, MtpMetadataCacheFiller& source)
+MtpNodeMetadataPtr MtpMetadataCache::getItem(uint32_t id, MtpMetadataCacheFiller& source)
 {
 
 	clearOld();
 	cache_lookup_type::iterator i = m_cacheLookup.find(id);
-	if (i != m_cacheLookup.end())
+	if (i != m_cacheLookup.end()) {
+		DEBUG("cache hit %u '%s'", id, i->second->data->name().data());
 		return i->second->data;
-	CacheEntry newData;
-	newData.data = source.getMetadata();
-	assert(newData.data.self.id == id);
+	}
+
+	DEBUG("cache miss %u", id);
+	CacheEntry newData { source.getMetadata() };
+	assert(newData.data->id() == id);
 	newData.whenCreated = time(0);
-	m_cacheLookup[id] = m_cache.insert(m_cache.end(), newData);
+
+	auto new_i = m_cache.insert(m_cache.end(), newData);
+	m_cacheLookup[id] = new_i;
+	new_i->data->from_cache = true;
+
 	return newData.data;
 }
 
@@ -76,7 +83,7 @@ void MtpMetadataCache::clearOld()
 	{
 		if ((now - i->whenCreated) > 5)
 		{
-			m_cacheLookup.erase(m_cacheLookup.find(i->data.self.id));
+			m_cacheLookup.erase(i->data->id());
 			i = m_cache.erase(i);
 		}
 		else
@@ -88,9 +95,9 @@ MtpLocalFileCopy* MtpMetadataCache::openFile(MtpDevice& device, uint32_t id)
 {
 	local_file_cache_type::iterator i = m_localFileCache.find(id);
 	if (i != m_localFileCache.end())
-		return i->second;
+		return i->second.get();
 	MtpLocalFileCopy* newFile = new MtpLocalFileCopy(device, id);
-	m_localFileCache[id] = newFile;
+	m_localFileCache[id].reset(newFile);
 	return newFile;
 }
 
@@ -98,7 +105,7 @@ MtpLocalFileCopy* MtpMetadataCache::getOpenedFile(uint32_t id)
 {
 	local_file_cache_type::iterator i = m_localFileCache.find(id);
 	if (i != m_localFileCache.end())
-		return i->second;
+		return i->second.get();
 	else
 		return 0;
 }
@@ -109,7 +116,6 @@ uint32_t MtpMetadataCache::closeFile(uint32_t id)
 	if (i != m_localFileCache.end())
 	{
 		uint32_t newId = i->second->close();
-		delete i->second;
 		m_localFileCache.erase(i);
 		return newId;
 	}

@@ -42,12 +42,11 @@ public:
 
 	void Fsync();
 	void Truncate(off_t length);
-	void Rename(MtpNode& newParent, const std::string& newName);
+	void Rename(MtpNode& newParent, const boost::string_ref& newName);
 
-	MtpNodeMetadata getMetadata();
+	MtpNodeMetadataPtr getMetadata();
 
 protected:
-	MtpFileInfo	m_info;
 	bool		m_opened;
 	FILE*		m_localFile;
 	bool		m_needWrite;

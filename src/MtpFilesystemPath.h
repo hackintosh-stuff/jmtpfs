@@ -22,22 +22,24 @@
 #ifndef MTPFILESYSTEMPATH_H_
 #define MTPFILESYSTEMPATH_H_
 
-#include <string>
+#include <boost/utility/string_ref.hpp>
 
 class FilesystemPath
 {
 public:
+	FilesystemPath() = default;
 	FilesystemPath(const char* path);
+	FilesystemPath(const boost::string_ref& path);
 
-	std::string Head() const;
-	std::string Tail() const;
+	boost::string_ref Head() const;
+	boost::string_ref Tail() const;
 	FilesystemPath	Body() const;
 	FilesystemPath AllButTail() const;
 	bool Empty() const;
-	std::string str() const;
+	const boost::string_ref& str() const;
 
 protected:
-	std::string	m_path;
+	boost::string_ref	m_path;
 };
 
 

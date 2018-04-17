@@ -51,6 +51,7 @@ RecursiveMutex	globalLock;
 	{ \
 	LockMutex lock(globalLock); \
 	    MtpFuseContext* context((MtpFuseContext*)(fuse_get_context()->private_data)); \
+		DEBUG("%s(%s)", __func__, pathStr);
 
 #define FUSE_ERROR_BLOCK_END \
 	} \
@@ -87,6 +88,8 @@ extern "C" int jmtpfs_getattr(const char* pathStr, struct stat* info)
 
 }
 
+class Stop { };
+
 extern "C" int jmtpfs_readdir(const char* pathStr, void* buf, fuse_fill_dir_t filler,
 		off_t offset, struct fuse_file_info *fi)
 {
@@ -94,12 +97,20 @@ extern "C" int jmtpfs_readdir(const char* pathStr, void* buf, fuse_fill_dir_t fi
 
 		FilesystemPath path(pathStr);
 		std::unique_ptr<MtpNode> n = context->getNode(path);
-		std::vector<std::string> contents = n->readdir();
-		for(std::vector<std::string>::iterator i = contents.begin(); i != contents.end(); i++)
-		{
-			if (filler(buf,i->c_str(),0, 0))
-				return 0;
+
+		try {
+			n->readdir( [&buf, &filler, &context](const boost::string_ref& name, struct stat* s) {
+					DEBUG("  fill: %s", name.data());
+					if (s != NULL) {
+						s->st_uid = context->uid();
+						s->st_gid = context->gid();
+					}
+					if (filler(buf,name.data(), s, 0))
+						throw Stop();
+				} );
+		} catch( const Stop& ) {
 		}
+
 		return 0;
 
 	FUSE_ERROR_BLOCK_END
@@ -350,10 +361,11 @@ int main(int argc, char *argv[])
 			if (options.listStorage)
 			{
 				std::unique_ptr<MtpDevice> device = devices.GetDevice(i);
-				std::vector<MtpStorageInfo> storages = device->GetStorageDevices();
+				std::vector<MtpStorageInfo> storages = std::move(device->GetStorageDevices());
 				std::vector<std::string> storageList;
-				for(std::vector<MtpStorageInfo>::iterator i = storages.begin(); i != storages.end(); i++)
-					storageList.push_back(i->description);
+				for(auto& i : storages) {
+					storageList.push_back(i.description);
+				}
 				storageDevices.push_back(storageList);
 			}
 		}
@@ -414,9 +426,10 @@ int main(int argc, char *argv[])
 			return -1;
 		}
 		std::cout << "Storage devices on " << device->Get_Modelname() << ":"<< std::endl;
-		std::vector<MtpStorageInfo> storages = device->GetStorageDevices();
-		for(std::vector<MtpStorageInfo>::iterator i = storages.begin(); i != storages.end(); i++)
-			std::cout << "    " << i->description << std::endl;
+		std::vector<MtpStorageInfo> storages = std::move(device->GetStorageDevices());
+		for(auto& i : storages) {
+			std::cout << "    " << i.description << std::endl;
+		}
 		return EXIT_SUCCESS;
 	}
 

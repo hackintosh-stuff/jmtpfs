@@ -44,7 +44,7 @@ public:
 	void truncate(off_t length);
 	size_t read(void* ptr, size_t size);
 
-	void CopyTo(MtpDevice& device, NewLIBMTPFile& destination);
+	void CopyTo(MtpDevice& device, LIBMTP_file_t* destination);
 
 private:
 	MtpLocalFileCopy(const MtpLocalFileCopy&);

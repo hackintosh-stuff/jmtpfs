@@ -25,13 +25,20 @@
 #include "MtpDevice.h"
 #include <vector>
 
-class MtpNodeMetadata
+class MtpNodeMetadata : public MtpFileInfo
 {
 public:
-	MtpFileInfo					self;
+	MtpNodeMetadata(MtpFileInfo&& info) : MtpFileInfo(std::move(info)) { }
+	MtpNodeMetadata(const MtpFileInfo& info) : MtpFileInfo(info) { }
+
+	bool has_children = false;
+	bool has_storages = false;
+	bool from_cache = false;
+
 	std::vector<MtpFileInfo>	children;
 	std::vector<MtpStorageInfo>	storages;
 };
 
+typedef std::shared_ptr<MtpNodeMetadata> MtpNodeMetadataPtr;
 
 #endif /* MTPNODEMETADATA_H_ */

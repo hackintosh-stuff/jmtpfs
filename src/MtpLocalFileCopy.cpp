@@ -55,12 +55,17 @@ uint32_t MtpLocalFileCopy::close()
 				struct stat tempInfo;
 				if (fstat(fileno(m_localFile), &tempInfo))
 					throw ReadError(errno);
+
 				MtpFileInfo remoteInfo = m_device.GetFileInfo(m_remoteId);
-				NewLIBMTPFile newFile(remoteInfo.name, remoteInfo.parentId, remoteInfo.storageId, tempInfo.st_size);
+
+				remoteInfo.id() = 0;
+				remoteInfo.modificationdate() = 0;
+				remoteInfo.filesize() = tempInfo.st_size;
+
 				m_device.DeleteObject(m_remoteId);
 				std::cout << "************ sending file" << std::endl;
-				m_device.SendFile(newFile, fileno(m_localFile));
-				m_remoteId = ((LIBMTP_file_t*)newFile)->item_id;
+				m_device.SendFile(remoteInfo, fileno(m_localFile));
+				m_remoteId = remoteInfo.id();
 			}
 			catch(...)
 			{
@@ -118,7 +123,7 @@ void MtpLocalFileCopy::truncate(off_t length)
 	m_needWriteBack = true;
 }
 
-void MtpLocalFileCopy::CopyTo(MtpDevice& device, NewLIBMTPFile& destination)
+void MtpLocalFileCopy::CopyTo(MtpDevice& device, LIBMTP_file_t* destination)
 {
 	fflush(m_localFile);
 	if (fseek(m_localFile, 0, SEEK_SET))

@@ -26,37 +26,43 @@
 #include <algorithm>
 #include <magic.h>
 
+namespace {
 
-
-MtpFileInfo::MtpFileInfo(LIBMTP_file_t& info)
+LIBMTP_file_t* createFileInfo(const boost::string_ref& filename, uint32_t parentId, uint32_t storageId, uint64_t size)
 {
-	id = info.item_id;
-	parentId = info.parent_id;
-	storageId = info.storage_id;
-	name = info.filename;
-	filetype = info.filetype;
-	filesize = info.filesize;
-	modificationdate = info.modificationdate;
+	LIBMTP_file_t* fi = LIBMTP_new_file_t();
+	fi->filename = strndup(filename.data(), filename.size());
+	fi->parent_id = parentId;
+	fi->storage_id = storageId;
+	fi->filesize = size;
+
+	return fi;
 }
 
-NewLIBMTPFile::NewLIBMTPFile(const std::string& filename, uint32_t parentId, uint32_t storageId, uint64_t size)
-{
-	m_fileInfo = LIBMTP_new_file_t();
-	m_fileInfo->filename = strdup(filename.c_str());
-	m_fileInfo->parent_id = parentId;
-	m_fileInfo->storage_id = storageId;
-	m_fileInfo->filesize = size;
 }
 
-NewLIBMTPFile::~NewLIBMTPFile()
+
+MtpFileInfo::MtpFileInfo(
+const boost::string_ref& filename, uint32_t parentId, uint32_t storageId, uint64_t size) :
+	MtpFileInfo(createFileInfo(filename, parentId, storageId, size))
 {
-	LIBMTP_destroy_file_t(m_fileInfo);
 }
 
-NewLIBMTPFile::operator LIBMTP_file_t*()
+void MtpFileInfo::stat(struct stat& s) const
 {
-	return m_fileInfo;
+	memset(&s, 0, sizeof(s));
+
+	if (filetype() == LIBMTP_FILETYPE_FOLDER) {
+		s.st_mode = S_IFDIR | 0755;
+		s.st_nlink = 2;
+	} else {
+		s.st_mode = S_IFREG | 0644;
+		s.st_nlink = 1;
+		s.st_size = filesize();
+	}
+	s.st_mtime = modificationdate();
 }
+
 
 MtpDevice::MtpDevice(LIBMTP_raw_device_t& rawDevice)
 {
@@ -106,6 +112,8 @@ std::vector<MtpStorageInfo> MtpDevice::GetStorageDevices()
 {
 MtpLibLock	lock;
 
+	DEBUG("GetStorageDevices()");
+
 	if (LIBMTP_Get_Storage(m_mtpdevice, LIBMTP_STORAGE_SORTBY_NOTSORTED))
 	{
 		CheckErrors(true);
@@ -115,20 +123,22 @@ MtpLibLock	lock;
 	std::vector<MtpStorageInfo> result;
 	while(storage)
 	{
-		result.push_back(MtpStorageInfo(storage->id, storage->StorageDescription,
-				storage->FreeSpaceInBytes, storage->MaxCapacity));
+		result.emplace_back(storage->id, storage->StorageDescription,
+				storage->FreeSpaceInBytes, storage->MaxCapacity);
 		storage = storage->next;
 	}
-	return result;
+	return std::move(result);
 
 }
 
 MtpStorageInfo MtpDevice::GetStorageInfo(uint32_t storageId)
 {
-	std::vector<MtpStorageInfo> storages = GetStorageDevices();
-	for(std::vector<MtpStorageInfo>::iterator i = storages.begin(); i != storages.end(); i++)
-		if (i->id == storageId)
-			return *i;
+	std::vector<MtpStorageInfo> storages = std::move(GetStorageDevices());
+
+	for(auto& i : storages) {
+		if (i.id == storageId)
+			return std::move(i);
+	}
 	throw MtpStorageNotFound("storage not found");
 }
 
@@ -136,24 +146,26 @@ std::vector<MtpFileInfo> MtpDevice::GetFolderContents(uint32_t storageId, uint32
 {
 MtpLibLock lock;
 
+	DEBUG("GetFolderContents(%u, %u)", storageId, folderId);
+
 	std::vector<MtpFileInfo> result;
-	LIBMTP_file_t* files = LIBMTP_Get_Files_And_Folders(m_mtpdevice, storageId, folderId);
-	if (files == 0)
+	LIBMTP_file_t* file = LIBMTP_Get_Files_And_Folders(m_mtpdevice, storageId, folderId);
+	if (file == 0)
 	{
 		CheckErrors(false);
-		return result;
+		return std::move(result);
 	}
-	LIBMTP_file_t* filesWalk = files;
-	while(filesWalk)
-	{
-		MtpFileInfo fileInfo(MtpFileInfo(filesWalk->item_id, filesWalk->parent_id, filesWalk->storage_id, filesWalk->filename,
-					filesWalk->filetype, filesWalk->filesize));
-		result.push_back(fileInfo);
-		filesWalk = filesWalk->next;
+
+	size_t files = 0;
+	for (LIBMTP_file_t* f = file; f != NULL; f = f->next) {
+		files++;
 	}
-	if (files)
-		LIBMTP_destroy_file_t(files);
-	return result;
+	result.reserve(files);
+
+	for (LIBMTP_file_t* f = file; f != NULL; f = f->next) {
+		result.emplace_back(f);
+	}
+	return std::move(result);
 }
 
 
@@ -162,15 +174,14 @@ MtpFileInfo MtpDevice::GetFileInfo(uint32_t id)
 {
 MtpLibLock lock;
 
+	DEBUG("GetFileInfo(%u)", id);
+
 	LIBMTP_file_t* fileInfoP = LIBMTP_Get_Filemetadata(m_mtpdevice, id);
 	if (fileInfoP==0)
 	{
 		CheckErrors(true);
 	}
-	MtpFileInfo fileInfo(*fileInfoP);
-	LIBMTP_destroy_file_t(fileInfoP);
-	return fileInfo;
-
+	return std::move(MtpFileInfo(fileInfoP));
 }
 
 
@@ -178,15 +189,21 @@ void MtpDevice::GetFile(uint32_t id, int fd)
 {
 MtpLibLock lock;
 
+	DEBUG("GetFile(%u, %d)", id, fd);
+
 	if (LIBMTP_Get_File_To_File_Descriptor(m_mtpdevice, id, fd,0,0))
 		CheckErrors(true);
 }
 
-void MtpDevice::CreateFolder(const std::string& name, uint32_t parentId, uint32_t storageId)
+void MtpDevice::CreateFolder(const boost::string_ref& name, uint32_t parentId, uint32_t storageId)
 {
 MtpLibLock lock;
 
-	if (LIBMTP_Create_Folder(m_mtpdevice, (char*) name.c_str(), parentId, storageId)==0)
+	std::unique_ptr<char> zname( strndup(name.data(), name.length()) );
+
+	DEBUG("CreateFolder(%s, %u, %u)", zname.get(), parentId, storageId);
+
+	if (LIBMTP_Create_Folder(m_mtpdevice, zname.get(), parentId, storageId)==0)
 		CheckErrors(true);
 }
 
@@ -217,6 +234,9 @@ MtpLibLock lock;
 void MtpDevice::DeleteObject(uint32_t id)
 {
 MtpLibLock lock;
+
+	DEBUG("DeleteObject(%u)", id);
+
 	if (LIBMTP_Delete_Object(m_mtpdevice, id))
 		CheckErrors(true);
 }
@@ -224,6 +244,8 @@ MtpLibLock lock;
 void MtpDevice::SendFile(LIBMTP_file_t* destination, int fd)
 {
 MtpLibLock lock;
+
+	DEBUG("SendFile(%d)", fd);
 
 const char* mimeType = 0;
 	if (destination->filesize > 0)
@@ -252,23 +274,46 @@ const char* mimeType = 0;
 }
 
 
-void MtpDevice::RenameFile(uint32_t id, const std::string& newName)
+void MtpDevice::RenameFile(uint32_t id, const boost::string_ref& name)
 {
-	MtpLibLock lock;
+MtpLibLock lock;
+
+	std::unique_ptr<char> zname( strndup(name.data(), name.length()) );
+
+	DEBUG("RenameFile(%u, %s)", id, zname.get());
+
 	LIBMTP_file_t* fileInfo = LIBMTP_Get_Filemetadata(m_mtpdevice, id);
 	if (fileInfo==0)
 	{
 		CheckErrors(true);
 	}
-	int result = LIBMTP_Set_File_Name(m_mtpdevice, fileInfo, newName.c_str());
+	int result = LIBMTP_Set_File_Name(m_mtpdevice, fileInfo, zname.get());
 	LIBMTP_destroy_file_t(fileInfo);
 	if (result)
 		CheckErrors(true);
 }
 
+void MtpDevice::RenameFile(MtpFileInfo& info, const boost::string_ref& name)
+{
+MtpLibLock lock;
+
+	std::unique_ptr<char> zname( strndup(name.data(), name.length()) );
+
+	DEBUG("RenameFile(%u, %s)", info->id(), zname.get());
+
+	int result = LIBMTP_Set_File_Name(m_mtpdevice, info, zname.get());
+	if (result)
+		CheckErrors(true);
+
+	info.updateName();
+}
+
 void MtpDevice::SetObjectProperty(uint32_t id, LIBMTP_property_t property, const std::string& value)
 {
 	MtpLibLock lock;
+
+	DEBUG("SetObjectProperty(%u ...)", id);
+
 	if (LIBMTP_Set_Object_String(m_mtpdevice, id, property, value.c_str()))
 		CheckErrors(true);
 }

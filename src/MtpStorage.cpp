@@ -32,6 +32,15 @@ std::unique_ptr<MtpNode> MtpStorage::Clone()
 	return std::unique_ptr<MtpNode>(new MtpStorage(m_device, m_cache, m_id));
 }
 
+MtpNodeMetadataPtr MtpStorage::getMetadata()
+{
+	MtpNodeMetadataPtr md = std::make_shared<MtpNodeMetadata>(MtpFileInfo("", 0, m_storageId));
+
+	md->id() = m_storageId;
+	getChildren(md);
+
+	return std::move(md);
+}
 
 
 void MtpStorage::Remove()

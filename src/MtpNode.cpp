@@ -19,6 +19,7 @@
  * licensing@fsf.org
  */
 #include "MtpNode.h"
+#include "MtpRoot.h"
 #include "mtpFilesystemErrors.h"
 MtpNode::MtpNode(MtpDevice& device, MtpMetadataCache& cache, uint32_t id) : m_device(device), m_cache(cache), m_id(id)
 {
@@ -36,30 +37,35 @@ uint32_t MtpNode::Id()
 
 uint32_t MtpNode::GetParentNodeId()
 {
-	MtpNodeMetadata md = m_cache.getItem(m_id, *this);
+	MtpNodeMetadataPtr md = m_cache.getItem(m_id, *this);
 
-	if (md.self.parentId == 0)
-		return md.self.storageId;
+	if (md->parentId() == 0)
+		return md->storageId();
 	else
-		return md.self.parentId;
+		return md->parentId();
 }
 
+namespace {
+	const std::string this_dir(".");
+	const std::string parent_dir("..");
+}
 
-std::vector<std::string> MtpNode::readdir()
+void MtpNode::readdir(NameStatHandler&& cb)
 {
-	std::vector<std::string> result;
-	result.push_back(".");
-	result.push_back("..");
-	std::vector<std::string> entries = readDirectory();
-	result.insert(result.end(), entries.begin(), entries.end());
-	return result;
+	cb(this_dir, NULL);
+	cb(parent_dir, NULL);
+	readDirectory(std::move(cb));
 }
 
-std::vector<std::string> MtpNode::readDirectory()
+void MtpNode::readDirectory(NameStatHandler&& cb)
 {
 	throw NotADirectory();
 }
 
+size_t MtpNode::directorySize()
+{
+	throw NotADirectory();
+}
 
 void MtpNode::Open()
 {
@@ -76,7 +82,7 @@ int MtpNode::Read(char *buf, size_t size, off_t offset)
 	throw NotImplemented("Read");
 }
 
-void MtpNode::mkdir(const std::string& name)
+void MtpNode::mkdir(const boost::string_ref& name)
 {
 	throw NotImplemented("mkdir");
 }
@@ -87,7 +93,7 @@ void MtpNode::Remove()
 }
 
 
-void MtpNode::CreateFile(const std::string& name)
+void MtpNode::CreateFile(const boost::string_ref& name)
 {
 	throw NotImplemented("CreateFile");
 }
@@ -102,7 +108,7 @@ void MtpNode::Truncate(off_t length)
 	throw NotImplemented("Truncate");
 }
 
-void MtpNode::Rename(MtpNode& newParent, const std::string& newName)
+void MtpNode::Rename(MtpNode& newParent, const boost::string_ref& newName)
 {
 	throw NotImplemented("Rename");
 }
@@ -119,8 +125,8 @@ uint32_t MtpNode::StorageId()
 
 MtpStorageInfo MtpNode::GetStorageInfo()
 {
-	MtpNodeMetadata md = m_cache.getItem(m_id, *this);
-	return m_device.GetStorageInfo(md.self.storageId);
+	MtpNodeMetadataPtr md = m_cache.getItem(m_id, *this);
+	return std::move(MtpRoot(m_device, m_cache).GetStorageInfo(md->storageId()));
 }
 
 void MtpNode::statfs(struct statvfs *stat)
@@ -132,7 +138,7 @@ void MtpNode::statfs(struct statvfs *stat)
 	stat->f_blocks = storageInfo.maxCapacity / stat->f_bsize;
 	stat->f_bfree = storageInfo.freeSpaceInBytes / stat->f_bsize;
 	stat->f_bavail = stat->f_bfree;
-	stat->f_namemax = 233;
+	stat->f_namemax = MAX_MTP_NAME_LENGTH;
 
 }
 

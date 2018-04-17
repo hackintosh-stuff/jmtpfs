@@ -30,25 +30,29 @@ public:
 	MtpFolder(MtpDevice& device, MtpMetadataCache& cache, uint32_t storageId, uint32_t folderId);
 
 	std::unique_ptr<MtpNode> getNode(const FilesystemPath& path);
+	std::unique_ptr<MtpNode> getNode(const MtpFileInfo& i, const FilesystemPath& childPath = FilesystemPath());
+
 	void getattr(struct stat& info);
 
-	std::vector<std::string> readDirectory();
+	void readDirectory(NameStatHandler&& cb);
+	size_t directorySize();
 	void Remove();
 
-	void mkdir(const std::string& name);
-	void CreateFile(const std::string& name);
+	void mkdir(const boost::string_ref& name);
+	void CreateFile(const boost::string_ref& name);
 
 	uint32_t FolderId();
 	uint32_t StorageId();
 
-	void Rename(MtpNode& newParent, const std::string& newName);
+	void Rename(MtpNode& newParent, const boost::string_ref& newName);
 
-	MtpNodeMetadata getMetadata();
+	MtpNodeMetadataPtr getMetadata();
+
+	void getChildren(MtpNodeMetadataPtr md);
+	MtpNodeMetadataPtr getItem();
 
 protected:
 
-
-	std::vector<MtpFileInfo> m_files;
 	uint32_t m_storageId, m_folderId;
 };
 

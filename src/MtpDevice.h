@@ -28,6 +28,8 @@
 #include <stdexcept>
 #include <string.h>
 #include <magic.h>
+#include <boost/utility/string_ref.hpp>
+#include <memory>
 
 #define MAGIC_BUFFER_SIZE 8192
 
@@ -73,11 +75,24 @@ public:
 };
 
 
+#if (0)
+
+#define DEBUG(fmt, ARGS...) \
+    fprintf(stderr, "[debug] " fmt "\n", ##ARGS)
+
+#else
+
+#define DEBUG(fmt, ARGS...)
+
+#endif
+
 struct MtpStorageInfo
 {
-	MtpStorageInfo() {}
-	MtpStorageInfo(uint32_t i, std::string s, uint64_t fs, uint64_t mc) :
-		id(i), description(s), freeSpaceInBytes(fs), maxCapacity(mc) {}
+	MtpStorageInfo() = default;
+
+	MtpStorageInfo(uint32_t i, const std::string& s, uint64_t fs, uint64_t mc) :
+		id(i), description(s), freeSpaceInBytes(fs), maxCapacity(mc) {
+	}
 
 	uint32_t id;
 	std::string description;
@@ -87,37 +102,52 @@ struct MtpStorageInfo
 
 struct MtpFileInfo
 {
-	MtpFileInfo() {}
-	MtpFileInfo(LIBMTP_file_t& info);
-	MtpFileInfo(uint32_t i, uint32_t p, uint32_t storage,   std::string s, LIBMTP_filetype_t t, uint64_t fs) :
-			id(i), parentId(p), storageId(storage), name(s), filetype(t),
-			filesize(fs){}
+	MtpFileInfo(const boost::string_ref& filename, uint32_t parentId, uint32_t storageId, uint64_t size=0);
 
-	uint32_t id;
-	uint32_t parentId;
-	uint32_t storageId;
-	std::string name;
-	LIBMTP_filetype_t	filetype;
-	uint64_t	filesize;
-	time_t	modificationdate;
-};
+	MtpFileInfo(LIBMTP_file_t* info) :
+		filename(info->filename),
+		fileinfo(info, LIBMTP_file_deleter())
+	{ }
 
+	uint32_t& id() { return fileinfo->item_id; }
+	const uint32_t& id() const { return fileinfo->item_id; }
 
-class NewLIBMTPFile
-{
-public:
-	NewLIBMTPFile(const std::string& filename, uint32_t parentId, uint32_t storageId, uint64_t size=0);
-	~NewLIBMTPFile();
+	uint32_t& parentId() { return fileinfo->parent_id; }
+	const uint32_t& parentId() const { return fileinfo->parent_id; }
 
-	operator LIBMTP_file_t* ();
+	uint32_t& storageId() { return fileinfo->storage_id; }
+	const uint32_t& storageId() const { return fileinfo->storage_id; }
 
-protected:
-	LIBMTP_file_t*	m_fileInfo;
+	const boost::string_ref& name() const { return filename; }
+
+	LIBMTP_filetype_t& filetype() { return fileinfo->filetype; }
+	const LIBMTP_filetype_t& filetype() const { return fileinfo->filetype; }
+
+	uint64_t& filesize() { return fileinfo->filesize; }
+	const uint64_t& filesize() const { return fileinfo->filesize; }
+
+	time_t& modificationdate() { return fileinfo->modificationdate; }
+	const time_t& modificationdate() const { return fileinfo->modificationdate; }
+
+	operator LIBMTP_file_t*() { return fileinfo.get(); }
+	operator const LIBMTP_file_t*() const { return fileinfo.get(); }
+
+	void stat(struct stat& s) const;
+
+	void updateName() { filename = boost::string_ref(fileinfo->filename); }
 
 private:
-	NewLIBMTPFile(const NewLIBMTPFile&);
-	NewLIBMTPFile& operator=(const NewLIBMTPFile&);
+	struct LIBMTP_file_deleter {
+		void operator()(LIBMTP_file_t* info) const {
+			LIBMTP_destroy_file_t(info);
+		}
+	};
+
+private:
+	boost::string_ref filename;
+	std::shared_ptr<LIBMTP_file_t> fileinfo;
 };
+
 
 class MtpDevice
 {
@@ -132,10 +162,12 @@ public:
 	MtpFileInfo GetFileInfo(uint32_t id);
 	void GetFile(uint32_t id, int fd);
 	void SendFile(LIBMTP_file_t* destination, int fd);
-	void CreateFolder(const std::string& name, uint32_t parentId, uint32_t storageId);
+	void CreateFolder(const boost::string_ref& name, uint32_t parentId, uint32_t storageId);
 	void DeleteObject(uint32_t id);
-	void RenameFile(uint32_t id, const std::string& newName);
+	void RenameFile(uint32_t id, const boost::string_ref& name);
+	void RenameFile(MtpFileInfo& info, const boost::string_ref& name);
 	void SetObjectProperty(uint32_t id, LIBMTP_property_t property, const std::string& value);
+	void SetObjectProperty(uint32_t id, LIBMTP_property_t property, const boost::string_ref& value);
 	static LIBMTP_filetype_t PropertyTypeFromMimeType(const std::string& mimeType);
 
 

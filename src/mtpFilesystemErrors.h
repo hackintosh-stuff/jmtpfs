@@ -22,6 +22,8 @@
 #define MTPFILESYSTEMERRORS_H_
 
 #include <stdexcept>
+#include <errno.h>
+#include <boost/utility/string_ref.hpp>
 
 // There appears to be a bug in Android 4.0.4 on the Galaxy Nexus (and maybe
 // other Android versions as well) where if you specify a filename greater
@@ -34,16 +36,37 @@
 // length.
 #define MAX_MTP_NAME_LENGTH 233
 
+namespace {
+
+inline std::string str(const boost::string_ref& s)
+{
+	return std::string(s.data(), s.length());
+}
+
+}
+
 class MtpFilesystemError : public std::runtime_error
 {
 public:
+	MtpFilesystemError(const char* what) : std::runtime_error(std::string(what)) {};
+
 	MtpFilesystemError(const std::string& what) : std::runtime_error(what) {};
+
+	MtpFilesystemError(const boost::string_ref& what) : std::runtime_error(str(what)) {};
 };
 
 class FileNotFound : public MtpFilesystemError
 {
 public:
+	FileNotFound(const char* what) : MtpFilesystemError(std::string("File not found: ") + std::string(what))
+	{
+	}
+
 	FileNotFound(const std::string& what) : MtpFilesystemError(std::string("File not found: ") + what)
+	{
+	}
+
+	FileNotFound(const boost::string_ref& what) : MtpFilesystemError(std::string("File not found: ") + str(what))
 	{
 	}
 };
@@ -51,7 +74,15 @@ public:
 class NotImplemented : public MtpFilesystemError
 {
 public:
+	NotImplemented(const char* what) : MtpFilesystemError(std::string("Not implemented: ") + std::string(what))
+	{
+	}
+
 	NotImplemented(const std::string& what) : MtpFilesystemError(std::string("Not implemented: ") + what)
+	{
+	}
+
+	NotImplemented(const boost::string_ref& what) : MtpFilesystemError(std::string("Not implemented: ") + str(what))
 	{
 	}
 };
@@ -103,7 +134,7 @@ public:
 class NotADirectory : public MtpFilesystemError
 {
 public:
-	NotADirectory() : MtpFilesystemError("Not a directory: ") {}
+	NotADirectory() : MtpFilesystemError(std::string("Not a directory: ")) {}
 };
 
 class MtpNameTooLong : public MtpFilesystemErrorWithErrorCode

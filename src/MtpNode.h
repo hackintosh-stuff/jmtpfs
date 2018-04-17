@@ -28,8 +28,11 @@
 #include "FuseHeader.h"
 #include <time.h>
 #include <vector>
-#include <string>
 #include <memory>
+#include <boost/utility/string_ref.hpp>
+#include <functional>
+
+typedef std::function<void(const boost::string_ref&, struct stat*)> NameStatHandler;
 
 class MtpNode : public MtpMetadataCacheFiller
 {
@@ -37,13 +40,16 @@ public:
 	MtpNode(MtpDevice& device, MtpMetadataCache& cache, uint32_t id);
 	virtual ~MtpNode();
 
-	virtual std::vector<std::string> readdir();
+	virtual void readdir(NameStatHandler&& cb);
 
 	virtual uint32_t Id();
 
 	virtual std::unique_ptr<MtpNode> getNode(const FilesystemPath& path)=0;
 
-	virtual std::vector<std::string> readDirectory();
+	virtual void readDirectory(NameStatHandler&& cb);
+
+	virtual size_t directorySize();
+
 	virtual void getattr(struct stat& info) = 0;
 
 	virtual void Open();
@@ -51,12 +57,12 @@ public:
 	virtual int Read(char *buf, size_t size, off_t offset);
 	virtual int Write(const char* buf, size_t size, off_t offset);
 
-	virtual void mkdir(const std::string& name);
+	virtual void mkdir(const boost::string_ref& name);
 	virtual void Remove();
 
-	virtual void CreateFile(const std::string& name);
+	virtual void CreateFile(const boost::string_ref& name);
 
-	virtual void Rename(MtpNode& newParent, const std::string& newName);
+	virtual void Rename(MtpNode& newParent, const boost::string_ref& newName);
 
 	virtual void Truncate(off_t length);
 

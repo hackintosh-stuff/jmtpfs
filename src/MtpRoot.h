@@ -32,13 +32,15 @@ public:
 	std::unique_ptr<MtpNode> getNode(const FilesystemPath& path);
 	void getattr(struct stat& info);
 
-	std::vector<std::string> readDirectory();
+	void readDirectory(NameStatHandler&& cb);
+	size_t directorySize();
 
-	void mkdir(const std::string& name);
+	void mkdir(const boost::string_ref& name);
 	void Remove();
-	MtpNodeMetadata getMetadata();
+	MtpNodeMetadataPtr getMetadata();
 
 	MtpStorageInfo GetStorageInfo();
+	MtpStorageInfo GetStorageInfo(uint32_t storageId);
 
 	void statfs(struct statvfs *stat);
 };

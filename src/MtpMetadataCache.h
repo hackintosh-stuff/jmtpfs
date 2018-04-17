@@ -33,16 +33,14 @@ class MtpMetadataCacheFiller
 public:
 	virtual ~MtpMetadataCacheFiller();
 
-	virtual MtpNodeMetadata getMetadata()=0;
+	virtual MtpNodeMetadataPtr getMetadata()=0;
 };
 
 class MtpMetadataCache
 {
 public:
-	MtpMetadataCache();
-	~MtpMetadataCache();
-
-	MtpNodeMetadata getItem(uint32_t id, MtpMetadataCacheFiller& source);
+	void putItem(MtpNodeMetadataPtr data);
+	MtpNodeMetadataPtr getItem(uint32_t id, MtpMetadataCacheFiller& source);
 	void clearItem(uint32_t id);
 
 	MtpLocalFileCopy* openFile(MtpDevice& device, uint32_t id);
@@ -54,13 +52,13 @@ private:
 	void clearOld();
 	struct CacheEntry
 	{
-		MtpNodeMetadata data;
+		MtpNodeMetadataPtr data;
 		time_t			whenCreated;
 	};
 
 	typedef std::list<CacheEntry> cache_type;
 	typedef std::unordered_map<uint32_t, cache_type::iterator> cache_lookup_type;
-	typedef std::unordered_map<uint32_t, MtpLocalFileCopy*> local_file_cache_type;
+	typedef std::unordered_map<uint32_t, std::unique_ptr<MtpLocalFileCopy> > local_file_cache_type;
 
 	cache_type				m_cache;
 	cache_lookup_type		m_cacheLookup;
